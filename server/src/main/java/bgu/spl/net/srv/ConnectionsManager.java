@@ -2,14 +2,22 @@ package bgu.spl.net.srv;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
-public class ConnectionsImpl<T> implements Connections<T> {
+public class ConnectionsManager<T> implements Connections<T> {
 
-    public HashMap<Integer, BlockingConnectionHandler<T>> handlersById = new HashMap<>();
+    private AtomicInteger idIndex = new AtomicInteger(0);
+    public HashMap<Integer, ConnectionHandler<T>> handlersById = new HashMap<>();
     public HashMap<String, ArrayList<Integer>> handlersIdsByChannels = new HashMap<>();
 
+    public int addConnection(ConnectionHandler<T> connection){
+        int connectionId = idIndex.incrementAndGet();
+        handlersById.put(connectionId, connection);
+        return connectionId;
+    }
+
     public boolean send(int connectionId, T msg) {
-        BlockingConnectionHandler<T> handler = handlersById.get(connectionId);
+        ConnectionHandler<T> handler = handlersById.get(connectionId);
 
         if (handler != null) {
             try {
@@ -34,7 +42,7 @@ public class ConnectionsImpl<T> implements Connections<T> {
 
     // TODO: When moving to SQL change the logic
     public void disconnect(int connectionId){
-        BlockingConnectionHandler<T> handler = handlersById.get(connectionId);
+        ConnectionHandler<T> handler = handlersById.get(connectionId);
         if (handler != null) {
             try {
                 handler.close();
@@ -42,13 +50,19 @@ public class ConnectionsImpl<T> implements Connections<T> {
                 System.out.println("Failed to disconnect " + e);
             } finally {
                 handlersById.remove(connectionId);
-                handlersIdsByChannels.remove(connectionId);
                 for (String channel : handlersIdsByChannels.keySet()) {
                     if (handlersIdsByChannels.get(channel).contains(connectionId)) {
-                        handlersIdsByChannels.get(channel).remove(connectionId);
+                        handlersIdsByChannels.get(channel).remove((Integer) connectionId);
                     }
                 }
             }
+        }
+    }
+
+    public void disconnectAll(){
+        ArrayList<Integer> connectionIds = new ArrayList<>(handlersById.keySet());
+        for (Integer connectionId : connectionIds) {
+            disconnect(connectionId);
         }
     }
 }

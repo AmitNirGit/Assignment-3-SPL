@@ -13,6 +13,7 @@ public abstract class BaseServer<T> implements Server<T> {
     private final Supplier<MessagingProtocol<T>> protocolFactory;
     private final Supplier<MessageEncoderDecoder<T>> encdecFactory;
     private ServerSocket sock;
+    private ConnectionsManager<T> connections;
 
     public BaseServer(
             int port,
@@ -27,7 +28,7 @@ public abstract class BaseServer<T> implements Server<T> {
 
     @Override
     public void serve() {
-
+        connections = new ConnectionsManager<>();
         try (ServerSocket serverSock = new ServerSocket(port)) {
 			System.out.println("Server started");
 
@@ -42,7 +43,9 @@ public abstract class BaseServer<T> implements Server<T> {
                         encdecFactory.get(),
                         protocolFactory.get());
 
+                int connectionId = connections.addConnection(handler);
                 execute(handler);
+
             }
         } catch (IOException ex) {
         }
@@ -54,6 +57,8 @@ public abstract class BaseServer<T> implements Server<T> {
     public void close() throws IOException {
 		if (sock != null)
 			sock.close();
+        if (connections != null)
+            connections.disconnectAll();
     }
 
     protected abstract void execute(BlockingConnectionHandler<T>  handler);
