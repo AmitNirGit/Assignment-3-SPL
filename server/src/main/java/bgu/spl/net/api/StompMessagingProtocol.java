@@ -14,4 +14,9 @@ public interface StompMessagingProtocol<T>  {
      * @return true if the connection should be terminated
      */
     boolean shouldTerminate();
+
+    /**
+     * @return the connection ID, or -1 if not yet initialized
+     */
+    int getConnectionId();
 }

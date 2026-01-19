@@ -1,7 +1,7 @@
 package bgu.spl.net.srv;
 
 import bgu.spl.net.api.MessageEncoderDecoder;
-import bgu.spl.net.api.MessagingProtocol;
+import bgu.spl.net.api.StompMessagingProtocol;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.channels.ClosedSelectorException;
@@ -15,10 +15,11 @@ import java.util.function.Supplier;
 public class Reactor<T> implements Server<T> {
 
     private final int port;
-    private final Supplier<MessagingProtocol<T>> protocolFactory;
+    private final Supplier<StompMessagingProtocol<T>> protocolFactory;
     private final Supplier<MessageEncoderDecoder<T>> readerFactory;
     private final ActorThreadPool pool;
     private Selector selector;
+    private ConnectionsManager<T> connectionsManager;
 
     private Thread selectorThread;
     private final ConcurrentLinkedQueue<Runnable> selectorTasks = new ConcurrentLinkedQueue<>();
@@ -26,13 +27,14 @@ public class Reactor<T> implements Server<T> {
     public Reactor(
             int numThreads,
             int port,
-            Supplier<MessagingProtocol<T>> protocolFactory,
+            Supplier<StompMessagingProtocol<T>> protocolFactory,
             Supplier<MessageEncoderDecoder<T>> readerFactory) {
 
         this.pool = new ActorThreadPool(numThreads);
         this.port = port;
         this.protocolFactory = protocolFactory;
         this.readerFactory = readerFactory;
+        this.connectionsManager = new ConnectionsManager<T>();
     }
 
     @Override
@@ -54,7 +56,6 @@ public class Reactor<T> implements Server<T> {
                 runSelectionThreadTasks();
 
                 for (SelectionKey key : selector.selectedKeys()) {
-
                     if (!key.isValid()) {
                         continue;
                     } else if (key.isAcceptable()) {
@@ -95,12 +96,17 @@ public class Reactor<T> implements Server<T> {
     private void handleAccept(ServerSocketChannel serverChan, Selector selector) throws IOException {
         SocketChannel clientChan = serverChan.accept();
         clientChan.configureBlocking(false);
+
         final NonBlockingConnectionHandler<T> handler = new NonBlockingConnectionHandler<>(
-                readerFactory.get(),
-                protocolFactory.get(),
-                clientChan,
-                this);
+            readerFactory.get(),
+            protocolFactory.get(),
+            clientChan,
+            this);
+
+        int connectionId = connectionsManager.addConnection(handler);
+        handler.setConnectionIdAndConnections(connectionId, connectionsManager);
         clientChan.register(selector, SelectionKey.OP_READ, handler);
+        System.out.println("New client connected with id: " + connectionId);
     }
 
     private void handleReadWrite(SelectionKey key) {

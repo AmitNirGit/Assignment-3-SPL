@@ -14,7 +14,7 @@ public abstract class BaseServer<T> implements Server<T> {
     private final Supplier<StompMessagingProtocol<T>> protocolFactory;
     private final Supplier<MessageEncoderDecoder<T>> encdecFactory;
     private ServerSocket sock;
-    private ConnectionsManager<T> connections;
+    private ConnectionsManager<T> connectionsManager;
 
     public BaseServer(
             int port,
@@ -25,11 +25,11 @@ public abstract class BaseServer<T> implements Server<T> {
         this.protocolFactory = protocolFactory;
         this.encdecFactory = encdecFactory;
 		this.sock = null;
+        this.connectionsManager = new ConnectionsManager<>();
     }
 
     @Override
     public void serve() {
-        connections = new ConnectionsManager<>();
         try (ServerSocket serverSock = new ServerSocket(port)) {
 			System.out.println("Server started");
 
@@ -40,13 +40,15 @@ public abstract class BaseServer<T> implements Server<T> {
                 Socket clientSock = serverSock.accept();
                 System.out.println("New client connected");
 
-
+                
+                StompMessagingProtocol<T> protocol = protocolFactory.get();
                 BlockingConnectionHandler<T> handler = new BlockingConnectionHandler<>(
-                        clientSock,
-                        encdecFactory.get(),
-                        protocolFactory.get());
-
-                int connectionId = connections.addConnection(handler);
+                    clientSock,
+                    encdecFactory.get(),
+                    protocol);
+                    
+                    int connectionId = connectionsManager.addConnection(handler);
+                    protocol.start(connectionId, this.connectionsManager);
                 execute(handler);
 
             }
@@ -60,8 +62,8 @@ public abstract class BaseServer<T> implements Server<T> {
     public void close() throws IOException {
 		if (sock != null)
 			sock.close();
-        if (connections != null)
-            connections.disconnectAll();
+        if (connectionsManager != null)
+            connectionsManager.disconnectAll();
     }
 
     protected abstract void execute(BlockingConnectionHandler<T>  handler);
